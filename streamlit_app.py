@@ -50,6 +50,23 @@ st.markdown("""
     font-style: italic;
 }
 
+.section-header {
+    background: #34495e;
+    color: white;
+    padding: 0.5rem;
+    border-radius: 5px;
+    margin: 1rem 0 0.5rem 0;
+    font-weight: bold;
+    text-align: center;
+
+.stFileUploaer > div {
+    background-color: #f8f9fa;
+    border: 2px dashed #bdc3c7;
+    border-radius: 10px;
+    padding: 1rem;
+    margin: 0.5rem 0;
+}
+
 </style>""", unsafe_allow_html=True)
 
 
@@ -62,9 +79,35 @@ if 'pavement_data' not in st.session_state:
     st.session_state.pavement_data = None
 
 # Sidebar with enhanced styling
-st.sidebar.markdown('<div class="sidebar-title">Project DAAN</div>', unsafe_allow_html=True)
+st.sidebar.markdown('<div class="sidebar-title">Project DAAN Express</div>', unsafe_allow_html=True)
 st.sidebar.markdown('<div class="sidebar-subtitle">Digital Analytics for Asset-based Navigation of Roads</div>', unsafe_allow_html=True)
 st.sidebar.markdown('<div class="section-header"> 📁 Data Upload & Layer Controls </div>', unsafe_allow_html = True)
 
 # File uploaders with styling
 st.sidebar.markdown('<div class="section-header"> 📤 Upload Data Files </div>', unsafe_allow_html=True)
+
+# IRI Data Upload
+iri_file = st.sidebar.file_uploader(
+    "Upload IRI Data CSV",
+    type=['csv'],
+    help="CSV with columns: lat, lon, iri_score",
+    key = "iri_upload"
+)
+
+# Vehicle Detection Data Upload
+vehicle_file = st.sidebar.file_uploader(
+    "Upload Vehicle Detection Data CSV",
+    type=['csv'],
+    help="CSV with columns: lat, lon, type of vehicle",
+    key="vehicle_upload",
+)
+
+# Pothole Detection Data Upload
+pothole_file = st.sidebar.file_uploader(
+    "Upload Pothole Detection Data CSV",
+    type=['csv'],
+    help="CSV with columns: lat, lon, image_path",
+    key="pothole_upload"
+)
+
+
