@@ -6,3 +6,5 @@ geopandas>=0.14.0
 streamlit-folium>=0.14.0
 matplotlib>=3.7.0
 pillow>=10.0.0
+scipy>=1.11.0
+plotly>=5.17.0

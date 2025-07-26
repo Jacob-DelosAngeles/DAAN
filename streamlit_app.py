@@ -11,6 +11,10 @@ import os
 import base64
 from io import BytesIO
 from folium import plugins
+from utils.iri_calculator import IRICalculator
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import plotly.express as px
 
 # Page configuration
 st.set_page_config(
@@ -58,6 +62,7 @@ st.markdown("""
     margin: 1rem 0 0.5rem 0;
     font-weight: bold;
     text-align: center;
+}
 
 .stFileUploaer > div {
     background-color: #f8f9fa;
@@ -67,16 +72,65 @@ st.markdown("""
     margin: 0.5rem 0;
 }
 
+.iri-metric {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 1rem;
+    border-radius: 10px;
+    margin: 0.5rem 0;
+    text-align: center;
+    border: 2px solid #ffffff;
+}
+
+.iri-value {
+    font-size: 2rem;
+    font-weight: bold;
+    margin: 0.5rem 0;
+}
+
+.quality-assessment {
+    background: #f8f9fa;
+    border-left: 5px solid #28a745;
+    padding: 1rem;
+    border-radius: 5px;
+    margin: 1rem 0;
+}
+
+.quality-good { border-left-color: #28a745; }
+.quality-fair { border-left-color: #ffc107; }
+.quality-poor { border-left-color: #fd7e14; }
+.quality-bad { border-left-color: #dc3545; }
+
+/* Expander styling to match app design */
+.streamlit-expanderHeader {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+    color: white !important;
+    border-radius: 10px !important;
+    padding: 1rem !important;
+    font-weight: bold !important;
+    border: 2px solid #ffffff !important;
+    margin: 0.5rem 0 !important;
+}
+
+.streamlit-expanderContent {
+    background: #f8f9fa !important;
+    border-radius: 10px !important;
+    padding: 1rem !important;
+    margin: 0.5rem 0 !important;
+    border: 1px solid #e9ecef !important;
+}
+
 </style>""", unsafe_allow_html=True)
 
-
-# Initialize session state for sorting data
-if 'iri_data' not in st.session_state:
-    st.session_state.iri_data = None
-if 'object_data' not in st.session_state:
-    st.session_state.object_data = None
-if 'pavement_data' not in st.session_state:
-    st.session_state.pavement_data = None
+# Initialize session state for data and IRI calculation
+if 'vehicle_data' not in st.session_state:
+    st.session_state.vehicle_data = None
+if 'pothole_data' not in st.session_state:
+    st.session_state.pothole_data = None
+if 'iri_calculation_result' not in st.session_state:
+    st.session_state.iri_calculation_result = None
+if 'current_iri_file' not in st.session_state:
+    st.session_state.current_iri_file = None
 
 # Sidebar with enhanced styling
 st.sidebar.markdown('<div class="sidebar-title">Project DAAN Express</div>', unsafe_allow_html=True)
@@ -86,19 +140,13 @@ st.sidebar.markdown('<div class="section-header"> 📁 Data Upload & Layer Contr
 # File uploaders with styling
 st.sidebar.markdown('<div class="section-header"> 📤 Upload Data Files </div>', unsafe_allow_html=True)
 
-# IRI Data Upload
-iri_file = st.sidebar.file_uploader(
-    "Upload IRI Data CSV",
-    type=['csv'],
-    help="CSV with columns: lat, lon, iri_score",
-    key = "iri_upload"
-)
+
 
 # Vehicle Detection Data Upload
 vehicle_file = st.sidebar.file_uploader(
     "Upload Vehicle Detection Data CSV",
     type=['csv'],
-    help="CSV with columns: lat, lon, type of vehicle",
+    help="CSV with columns: lat, lon, vehicle_type",
     key="vehicle_upload",
 )
 
@@ -109,6 +157,147 @@ pothole_file = st.sidebar.file_uploader(
     help="CSV with columns: lat, lon, image_path",
     key="pothole_upload"
 )
+
+# IRI Sensor Data Upload for calculation
+iri_sensor_file = st.sidebar.file_uploader(
+    "Upload IRI Sensor Data CSV",
+    type=['csv'],
+    help="CSV with columns: time, ax, ay, az (from Physics Toolbox Sensor Suite)",
+    key="iri_sensor_upload"
+)
+
+# Automatic IRI calculation when file is uploaded
+if iri_sensor_file is not None:
+    # Check if this is a new file (to avoid recalculation on every rerun)
+    if 'current_iri_file' not in st.session_state or st.session_state.current_iri_file != iri_sensor_file.name:
+        try:
+            # Initialize IRI Calculator
+            iri_calc = IRICalculator()
+            
+            # Load and process data
+            df = pd.read_csv(iri_sensor_file)
+            df_processed, duration = iri_calc.preprocess_data(df)
+            
+            if df_processed is not None:
+                # Calculate IRI with default segment length of 150
+                iri_values, segments, sampling_rate, speed = iri_calc.calculate_iri_rms_method(df_processed, 150)
+                
+                # Check if calculation was successful
+                if not iri_values or len(iri_values) == 0:
+                    st.sidebar.error("❌ No IRI values calculated. Check your data format.")
+                else:
+                    # Calculate statistics
+                    mean_iri = np.mean(iri_values)
+                    std_iri = np.std(iri_values)
+                    segment_centers = [s['distance_start'] + s['length']/2 for s in segments]
+                    total_distance = segment_centers[-1] + (segments[-1]['length']/2) if segment_centers else 0
+                    
+                    # Store results in session state
+                    st.session_state.iri_calculation_result = {
+                        'iri_values': iri_values,
+                        'segments': segments,
+                        'segment_centers': segment_centers,
+                        'mean_iri': mean_iri,
+                        'std_iri': std_iri,
+                        'sampling_rate': sampling_rate,
+                        'speed': speed,
+                        'duration': duration,
+                        'total_distance': total_distance,
+                        'df_processed': df_processed
+                    }
+                    
+                    # Store current file name to avoid recalculation
+                    st.session_state.current_iri_file = iri_sensor_file.name
+                    st.sidebar.success("✅ IRI calculation completed!")
+            else:
+                st.sidebar.error("❌ Data preprocessing failed")
+        except Exception as e:
+            st.sidebar.error(f"❌ Error calculating IRI: {str(e)}")
+
+# Display IRI Results if available
+if st.session_state.iri_calculation_result:
+    result = st.session_state.iri_calculation_result
+    
+    # IRI Results Expander
+    with st.sidebar.expander("📊 IRI Results", expanded= False):
+        # IRI Value
+        st.markdown(f"""
+        <div class="iri-metric">
+            <div>🛣️ IRI Value</div>
+            <div class="iri-value">{result['mean_iri']:.2f}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Road Quality
+        if result['mean_iri'] <= 3:
+            quality = 'Good'
+            quality_class = 'quality-good'
+        elif result['mean_iri'] <= 5:
+            quality = 'Fair'
+            quality_class = 'quality-fair'
+        elif result['mean_iri'] <= 7:
+            quality = 'Poor'
+            quality_class = 'quality-poor'
+        else:
+            quality = 'Bad'
+            quality_class = 'quality-bad'
+        
+        st.markdown(f"""
+        <div class="iri-metric">
+            <div>⭐ Road Quality</div>
+            <div class="iri-value">{quality}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Standard Deviation
+        st.markdown(f"""
+        <div class="iri-metric">
+            <div>📊 Standard Deviation</div>
+            <div class="iri-value">{result['std_iri']:.2f}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Quality Assessment
+        def get_quality_assessment(iri_value):
+            if iri_value <= 3:
+                return {
+                    'rating': 'Good',
+                    'description': 'Acceptable pavement condition',
+                    'interpretation': 'This pavement provides good ride quality with acceptable smoothness. Vehicle operating costs are within normal range and user comfort is satisfactory.',
+                    'recommendations': 'Condition with routine maintenance activities. Monitor condition annually and apply preventive treatments as needed to maintain current service level.'
+                }
+            elif iri_value <= 5:
+                return {
+                    'rating': 'Fair',
+                    'description': 'Moderate pavement roughness',
+                    'interpretation': 'This pavement shows moderate roughness that begins to affect ride quality. Some increase in vehicle operating costs and minor user discomfort may be experienced.',
+                    'recommendations': 'Plan for rehabilitation treatments within 3-5 years. Consider surface treatments or minor structural improvements to prevent further deterioration.'
+                }
+            elif iri_value <= 7:
+                return {
+                    'rating': 'Poor',
+                    'description': 'Significant pavement deterioration',
+                    'interpretation': 'This pavement has significant roughness that notably impacts ride quality and increases vehicle operating costs. User comfort is compromised and maintenance costs are elevated.',
+                    'recommendations': 'Prioritize major rehabilitation or reconstruction within 2-3 years. Implement interim maintenance to prevent further rapid deterioration and safety issues.'
+                }
+            else:
+                return {
+                    'rating': 'Bad',
+                    'description': 'Severe pavement distress',
+                    'interpretation': 'This pavement exhibits severe roughness causing substantial user discomfort, high vehicle operating costs, and potential safety concerns. Structural integrity may be compromised.',
+                    'recommendations': 'Immediate major rehabilitation or full reconstruction required. Consider emergency repairs if safety is compromised. Evaluate load restrictions until permanent repairs are completed.'
+                }
+        
+        quality_info = get_quality_assessment(result['mean_iri'])
+        
+        st.markdown(f"""
+        <div class="quality-assessment {quality_class}">
+            <h4>🎯 Quality Assessment</h4>
+            <p><strong>Rating:</strong> {quality_info['rating']} ({quality_info['description']})</p>
+            <p><strong>Interpretation:</strong> {quality_info['interpretation']}</p>
+            <p><strong>Recommendations:</strong> {quality_info['recommendations']}</p>
+        </div>
+        """, unsafe_allow_html=True)
 
 # Function to validate and load CSV data
 # To validate and change if plottable
@@ -149,6 +338,27 @@ def load_and_validate_csv(file, required_columns, data_type):
         st.error(f"Error loading {data_type} file: {str(e)}")
         return None
 
+# Load and validate the data files
+# vehicle_file, pothole_file
+
+if vehicle_file is not None:
+    st.session_state.vehicle_data = load_and_validate_csv(
+        vehicle_file, ['lat', 'lon', 'vehicle_type'], "Vehicle Data"
+    )
+
+if pothole_file is not None:
+    st.session_state.pothole_data = load_and_validate_csv(
+        pothole_file, ['lat', 'lon', 'image_path'], "Pothole Data"
+    )
+
+# Layer toggle controls with styling
+st.sidebar.markdown('<div class="section-header"> 🗺️ Data Layers </div>', unsafe_allow_html=True)
+
+layer_controls = {}
+layer_controls['iri'] = st.sidebar.checkbox("IRI Values", value=True, disabled=st.session_state.iri_calculation_result is None)
+layer_controls['vehicles'] = st.sidebar.checkbox("Vehicles", value=True, disabled=st.session_state.vehicle_data is None)
+layer_controls['pothole'] = st.sidebar.checkbox("Potholes", value=True, disabled=st.session_state.pothole_data is None)
+
 # ---------------------------- MAP ------------------------------------------------
 
 # Create a map selection option in the sidebar
@@ -165,8 +375,34 @@ center_lat, center_lon = 14.5995, 120.9842  # Default to Manila
 # If we have data, center on the data
 all_lats, all_lons = [], []
 
+# Collect IRI data coordinates for map centering
+iri_lats = []
+iri_lons = []
+if st.session_state.iri_calculation_result and layer_controls['iri']:
+    result = st.session_state.iri_calculation_result
+    df_processed = result['df_processed']
+    
+    # Check if GPS data is available
+    if 'latitude' in df_processed.columns and 'longitude' in df_processed.columns:
+        # Get coordinates for each segment
+        for i, segment in enumerate(result['segments']):
+            if i < len(result['iri_values']):
+                idx = segment['center_index']
+                if 0 <= idx < len(df_processed):
+                    lat = df_processed.iloc[idx]['latitude']
+                    lon = df_processed.iloc[idx]['longitude']
+                    iri_lats.append(lat)
+                    iri_lons.append(lon)
+
 # Session state for lats and lons
 
+# Update map center based on available data
+if all_lats and all_lons:
+    center_lat = np.mean(all_lats)
+    center_lon = np.mean(all_lons)
+elif iri_lats and iri_lons:
+    center_lat = np.mean(iri_lats)
+    center_lon = np.mean(iri_lons)
 
 # Select tile layer based on user choice
 tile_configs = {
@@ -215,8 +451,63 @@ else:
                     control_scale=True
     )
 
+# Add IRI data to map if available
+if st.session_state.iri_calculation_result and layer_controls['iri']:
+    result = st.session_state.iri_calculation_result
+    df_processed = result['df_processed']
+    
+    # Check if GPS data is available
+    if 'latitude' in df_processed.columns and 'longitude' in df_processed.columns:
+        # Get coordinates for each segment
+        for i, segment in enumerate(result['segments']):
+            if i < len(result['iri_values']):
+                idx = segment['center_index']
+                if 0 <= idx < len(df_processed):
+                    lat = df_processed.iloc[idx]['latitude']
+                    lon = df_processed.iloc[idx]['longitude']
+                    iri_value = result['iri_values'][i]
+                    
+                    # Determine color based on IRI value
+                    if iri_value <= 3:
+                        color = 'green'
+                        quality = 'Good'
+                    elif iri_value <= 5:
+                        color = 'yellow'
+                        quality = 'Fair'
+                    elif iri_value <= 7:
+                        color = 'orange'
+                        quality = 'Poor'
+                    else:
+                        color = 'red'
+                        quality = 'Bad'
+                    
+                    # Add marker to map
+                    folium.CircleMarker(
+                        location=[lat, lon],
+                        radius=8,
+                        popup=f'IRI: {iri_value:.2f}<br>Quality: {quality}',
+                        color=color,
+                        fill=True,
+                        fillColor=color,
+                        fillOpacity=0.7,
+                        weight=2
+                    ).add_to(m)
 
-
+# Add legend for IRI values if IRI data is available
+if st.session_state.iri_calculation_result and layer_controls['iri']:
+    legend_html = '''
+    <div style="position: fixed; 
+                bottom: 50px; left: 50px; width: 200px; height: 120px; 
+                background-color: white; border:2px solid grey; z-index:9999; 
+                font-size:14px; padding: 10px">
+    <p><b>IRI Quality Legend</b></p>
+    <p><i class="fa fa-circle" style="color:green"></i> Good (≤3)</p>
+    <p><i class="fa fa-circle" style="color:yellow"></i> Fair (3-5)</p>
+    <p><i class="fa fa-circle" style="color:orange"></i> Poor (5-7)</p>
+    <p><i class="fa fa-circle" style="color:red"></i> Bad (>7)</p>
+    </div>
+    '''
+    m.get_root().html.add_child(folium.Element(legend_html))
 
 # Add comprehensive CSS to make map cover full main area
 st.markdown("""
@@ -417,3 +708,4 @@ window.addEventListener('resize', resizeMapAndRemoveHeader);
 
 # Display the full-screen map covering the entire main area
 map_data = st_folium(m, width=None, height=1000)
+
