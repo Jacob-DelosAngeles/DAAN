@@ -458,7 +458,7 @@ if st.session_state.iri_calculation_result and layer_controls['iri']:
     
     # Check if GPS data is available
     if 'latitude' in df_processed.columns and 'longitude' in df_processed.columns:
-        # Get coordinates for each segment
+        # Create color-changing continuous line based on IRI values
         for i, segment in enumerate(result['segments']):
             if i < len(result['iri_values']):
                 idx = segment['center_index']
@@ -481,30 +481,59 @@ if st.session_state.iri_calculation_result and layer_controls['iri']:
                         color = 'red'
                         quality = 'Bad'
                     
-                    # Add marker to map
-                    folium.CircleMarker(
-                        location=[lat, lon],
-                        radius=8,
-                        popup=f'IRI: {iri_value:.2f}<br>Quality: {quality}',
-                        color=color,
-                        fill=True,
-                        fillColor=color,
-                        fillOpacity=0.7,
-                        weight=2
-                    ).add_to(m)
+                    # Create a small line segment for this IRI value
+                    # Get the next coordinate for the line segment
+                    if i + 1 < len(result['segments']):
+                        next_idx = result['segments'][i + 1]['center_index']
+                        if next_idx < len(df_processed):
+                            next_lat = df_processed.iloc[next_idx]['latitude']
+                            next_lon = df_processed.iloc[next_idx]['longitude']
+                            
+                            # Create line segment with color based on IRI value
+                            folium.PolyLine(
+                                locations=[[lat, lon], [next_lat, next_lon]],
+                                popup=f'IRI: {iri_value:.2f}<br>Quality: {quality}',
+                                color=color,
+                                weight=6,
+                                opacity=0.8
+                            ).add_to(m)
+                    else:
+                        # For the last segment, create a small line in the same direction
+                        # Use the previous segment's direction
+                        if i > 0:
+                            prev_idx = result['segments'][i - 1]['center_index']
+                            if prev_idx < len(df_processed):
+                                prev_lat = df_processed.iloc[prev_idx]['latitude']
+                                prev_lon = df_processed.iloc[prev_idx]['longitude']
+                                
+                                # Calculate direction vector
+                                dlat = lat - prev_lat
+                                dlon = lon - prev_lon
+                                
+                                # Create a small line segment in the same direction
+                                end_lat = lat + dlat * 0.5
+                                end_lon = lon + dlon * 0.5
+                                
+                                folium.PolyLine(
+                                    locations=[[lat, lon], [end_lat, end_lon]],
+                                    popup=f'IRI: {iri_value:.2f}<br>Quality: {quality}',
+                                    color=color,
+                                    weight=6,
+                                    opacity=0.8
+                                ).add_to(m)
 
 # Add legend for IRI values if IRI data is available
 if st.session_state.iri_calculation_result and layer_controls['iri']:
     legend_html = '''
     <div style="position: fixed; 
-                bottom: 50px; left: 50px; width: 200px; height: 120px; 
-                background-color: white; border:2px solid grey; z-index:9999; 
-                font-size:14px; padding: 10px">
-    <p><b>IRI Quality Legend</b></p>
-    <p><i class="fa fa-circle" style="color:green"></i> Good (≤3)</p>
-    <p><i class="fa fa-circle" style="color:yellow"></i> Fair (3-5)</p>
-    <p><i class="fa fa-circle" style="color:orange"></i> Poor (5-7)</p>
-    <p><i class="fa fa-circle" style="color:red"></i> Bad (>7)</p>
+                bottom: 50px; left: 50px; width: 220px; height: 180px; 
+                background-color: white; border: 2px solid #333; border-radius: 8px; z-index:9999; 
+                font-size:14px; padding: 15px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">
+    <p style="margin: 0 0 10px 0; font-weight: bold; font-size: 16px; text-align: center; border-bottom: 1px solid #ccc; padding-bottom: 5px;">IRI Quality Legend</p>
+    <p style="margin: 5px 0;"><span style="display: inline-block; width: 12px; height: 12px; background-color: green; border-radius: 50%; margin-right: 8px;"></span> Good (≤3)</p>
+    <p style="margin: 5px 0;"><span style="display: inline-block; width: 12px; height: 12px; background-color: yellow; border-radius: 50%; margin-right: 8px;"></span> Fair (3-5)</p>
+    <p style="margin: 5px 0;"><span style="display: inline-block; width: 12px; height: 12px; background-color: orange; border-radius: 50%; margin-right: 8px;"></span> Poor (5-7)</p>
+    <p style="margin: 5px 0;"><span style="display: inline-block; width: 12px; height: 12px; background-color: red; border-radius: 50%; margin-right: 8px;"></span> Bad (>7)</p>
     </div>
     '''
     m.get_root().html.add_child(folium.Element(legend_html))
