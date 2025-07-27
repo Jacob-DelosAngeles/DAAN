@@ -127,6 +127,10 @@ if 'vehicle_data' not in st.session_state:
     st.session_state.vehicle_data = None
 if 'pothole_data' not in st.session_state:
     st.session_state.pothole_data = None
+if 'pothole_images_data' not in st.session_state:
+    st.session_state.pothole_images_data = None
+if 'current_pothole_file' not in st.session_state:
+    st.session_state.current_pothole_file = None
 if 'iri_calculation_result' not in st.session_state:
     st.session_state.iri_calculation_result = None
 if 'current_iri_file' not in st.session_state:
@@ -150,12 +154,12 @@ vehicle_file = st.sidebar.file_uploader(
     key="vehicle_upload",
 )
 
-# Pothole Detection Data Upload
-pothole_file = st.sidebar.file_uploader(
-    "Upload Pothole Detection Data CSV",
+# Pothole Images Data Upload (with image paths)
+pothole_images_file = st.sidebar.file_uploader(
+    "Upload Pothole Images Data CSV",
     type=['csv'],
-    help="CSV with columns: lat, lon, image_path",
-    key="pothole_upload"
+    help="CSV with columns: latitude, longitude, image_path, confidence_score",
+    key="pothole_images_upload"
 )
 
 # IRI Sensor Data Upload for calculation
@@ -213,6 +217,78 @@ if iri_sensor_file is not None:
                 st.sidebar.error("❌ Data preprocessing failed")
         except Exception as e:
             st.sidebar.error(f"❌ Error calculating IRI: {str(e)}")
+
+# Function to validate and load CSV data
+# To validate and change if plottable
+def load_and_validate_csv(file, required_columns, data_type):
+    """Load and validate CSV file with required columns"""
+    try:
+        df = pd.read_csv(file)
+
+        # Check if required columns  exist
+        missing_cols = [
+            col for col in required_columns if col not in df.columns
+        ]
+
+        if missing_cols:
+            st.error(f"Missing columns in {data_type} file: {missing_cols}")
+            return None
+        
+        # Validate lat/lon are numeric
+        if  'lat' in df.columns and 'lon' in df.columns:
+            df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
+            df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
+            
+            # Remove rows with invalid coordinates
+            invalid_coords = df[df['lat'].isna() | df['lon'].isna()]
+            if len(invalid_coords) > 0:
+                st.warning(
+                    f"Removed {len(invalid_coords)} rows with invalid coordinates from {data_type}"
+                )
+                df = df.dropna(subset=['lat', 'lon'])
+        elif 'latitude' in df.columns and 'longitude' in df.columns:
+            df['latitude'] = pd.to_numeric(df['latitude'], errors='coerce')
+            df['longitude'] = pd.to_numeric(df['longitude'], errors='coerce')
+            
+            # Remove rows with invalid coordinates
+            invalid_coords = df[df['latitude'].isna() | df['longitude'].isna()]
+            if len(invalid_coords) > 0:
+                st.warning(
+                    f"Removed {len(invalid_coords)} rows with invalid coordinates from {data_type}"
+                )
+                df = df.dropna(subset=['latitude', 'longitude'])
+        
+        if len(df) == 0:
+            st.error(f"No valid data found in {data_type} file")
+            return None
+        
+        return df 
+    
+    except Exception as e:
+        st.error(f"Error loading {data_type} file: {str(e)}")
+        return None
+
+# Automatic pothole images data loading when file is uploaded
+if pothole_images_file is not None:
+    # Check if this is a new file (to avoid reloading on every rerun)
+    if 'current_pothole_file' not in st.session_state or st.session_state.current_pothole_file != pothole_images_file.name:
+        try:
+            # Load and validate pothole images data
+            pothole_df = load_and_validate_csv(
+                pothole_images_file, 
+                ['latitude', 'longitude', 'image_path', 'confidence_score'], 
+                "Pothole Images Data"
+            )
+            
+            if pothole_df is not None:
+                # Store data in session state
+                st.session_state.pothole_images_data = pothole_df
+                st.session_state.current_pothole_file = pothole_images_file.name
+                st.sidebar.success(f"✅ Loaded {len(pothole_df)} pothole detections!")
+            else:
+                st.sidebar.error("❌ Failed to load pothole images data")
+        except Exception as e:
+            st.sidebar.error(f"❌ Error loading pothole images data: {str(e)}")
 
 # Display IRI Results if available
 if st.session_state.iri_calculation_result:
@@ -299,44 +375,81 @@ if st.session_state.iri_calculation_result:
         </div>
         """, unsafe_allow_html=True)
 
-# Function to validate and load CSV data
-# To validate and change if plottable
-def load_and_validate_csv(file, required_columns, data_type):
-    """Load and validate CSV file with required columns"""
-    try:
-        df = pd.read_csv(file)
-
-        # Check if required columns  exist
-        missing_cols = [
-            col for col in required_columns if col not in df.columns
-        ]
-
-        if missing_cols:
-            st.error(f"Missing columns in {data_type} file: {missing_cols}")
-            return None
-        
-        # Validate lat/lon are numeric
-        if  'lat' in df.columns and 'lon' in df.columns:
-            df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
-            df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
-            
-            # Remove rows with invalid coordinates
-            invalid_coords = df[df['lat'].isna() | df['lon'].isna()]
-            if len(invalid_coords) > 0:
-                st.warning(
-                    f"Removed {len(invalid_coords)} rows with invalid coordinates from {data_type}"
-                )
-                df = df.dropna(subset=['lat', 'lon'])
-        
-        if len(df) == 0:
-            st.error(f"No valid data found in {data_type} file")
-            return None
-        
-        return df 
+# Display Pothole Images Statistics if available
+if st.session_state.pothole_images_data is not None:
+    pothole_df = st.session_state.pothole_images_data
     
-    except Exception as e:
-        st.error(f"Error loading {data_type} file: {str(e)}")
-        return None
+    # Pothole Images Statistics Expander
+    with st.sidebar.expander("🚧 Pothole Detections", expanded=False):
+        # Total detections
+        st.markdown(f"""
+        <div class="iri-metric">
+            <div>📊 Total Detections</div>
+            <div class="iri-value">{len(pothole_df)}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Average confidence
+        avg_confidence = pothole_df['confidence_score'].mean()
+        st.markdown(f"""
+        <div class="iri-metric">
+            <div>🎯 Average Confidence</div>
+            <div class="iri-value">{avg_confidence:.1%}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # High confidence detections (>80%)
+        high_conf_count = len(pothole_df[pothole_df['confidence_score'] > 0.8])
+        st.markdown(f"""
+        <div class="iri-metric">
+            <div>⭐ High Confidence (>80%)</div>
+            <div class="iri-value">{high_conf_count}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Coverage area (approximate)
+        lat_range = pothole_df['latitude'].max() - pothole_df['latitude'].min()
+        lon_range = pothole_df['longitude'].max() - pothole_df['longitude'].min()
+        coverage_km = max(lat_range, lon_range) * 111  # Rough conversion to km
+        st.markdown(f"""
+        <div class="iri-metric">
+            <div>🗺️ Coverage Area</div>
+            <div class="iri-value">{coverage_km:.1f} km</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Image viewer section
+        st.markdown("---")
+        st.markdown("**🔍 View Individual Images**")
+        
+        # Dropdown to select image
+        image_options = [f"{row['image_path']} ({row['confidence_score']:.1%})" for idx, row in pothole_df.iterrows()]
+        selected_image = st.selectbox("Select pothole image to view:", image_options, index=0)
+        
+        if selected_image:
+            # Extract image path from selection
+            image_path = selected_image.split(" (")[0]
+            confidence = float(selected_image.split("(")[1].split(")")[0].replace("%", "")) / 100
+            
+            # Find the corresponding row
+            selected_row = pothole_df[pothole_df['image_path'] == image_path].iloc[0]
+            
+            # Display image info
+            st.write(f"**Location:** {selected_row['latitude']:.6f}, {selected_row['longitude']:.6f}")
+            st.write(f"**Confidence:** {confidence:.1%}")
+            
+            # Load and display the selected image
+            full_image_path = os.path.join("streamlit_package/images/", image_path)
+            if os.path.exists(full_image_path):
+                try:
+                    image = Image.open(full_image_path)
+                    st.image(image, caption=f"Pothole Detection: {image_path}", use_container_width=True)
+                except Exception as e:
+                    st.error(f"Error loading image: {str(e)}")
+            else:
+                st.error(f"Image file not found: {full_image_path}")
+
+
 
 # Load and validate the data files
 # vehicle_file, pothole_file
@@ -346,10 +459,12 @@ if vehicle_file is not None:
         vehicle_file, ['lat', 'lon', 'vehicle_type'], "Vehicle Data"
     )
 
-if pothole_file is not None:
-    st.session_state.pothole_data = load_and_validate_csv(
-        pothole_file, ['lat', 'lon', 'image_path'], "Pothole Data"
-    )
+# if pothole_file is not None: # This line is removed as per the edit hint
+#     st.session_state.pothole_data = load_and_validate_csv( # This line is removed as per the edit hint
+#         pothole_file, ['lat', 'lon', 'image_path'], "Pothole Data" # This line is removed as per the edit hint
+#     ) # This line is removed as per the edit hint
+
+
 
 # Layer toggle controls with styling
 st.sidebar.markdown('<div class="section-header"> 🗺️ Data Layers </div>', unsafe_allow_html=True)
@@ -357,9 +472,46 @@ st.sidebar.markdown('<div class="section-header"> 🗺️ Data Layers </div>', u
 layer_controls = {}
 layer_controls['iri'] = st.sidebar.checkbox("IRI Values", value=True, disabled=st.session_state.iri_calculation_result is None)
 layer_controls['vehicles'] = st.sidebar.checkbox("Vehicles", value=True, disabled=st.session_state.vehicle_data is None)
-layer_controls['pothole'] = st.sidebar.checkbox("Potholes", value=True, disabled=st.session_state.pothole_data is None)
+# Remove the old Potholes checkbox
+# layer_controls['pothole'] = st.sidebar.checkbox("Potholes", value=True, disabled=st.session_state.pothole_data is None)
+layer_controls['pothole_images'] = st.sidebar.checkbox("Pothole Images", value=True, disabled=st.session_state.pothole_images_data is None)
+
+# Configuration for pothole images display
+if st.session_state.pothole_images_data is not None:
+    st.sidebar.markdown('<div class="section-header"> ⚙️ Pothole Display Settings </div>', unsafe_allow_html=True)
+    page_size = st.sidebar.slider(
+        "Markers per page:",
+        min_value=10,
+        max_value=100,
+        value=20,
+        step=10,
+        help="Number of pothole markers to show per page"
+    )
+    # Pagination state
+    if 'pothole_page' not in st.session_state:
+        st.session_state.pothole_page = 0
+    total_markers = len(st.session_state.pothole_images_data)
+    total_pages = (total_markers - 1) // page_size + 1
+    # Navigation buttons
+    col1, col2, col3 = st.sidebar.columns([1,2,1])
+    with col1:
+        if st.button('⬅️ Previous', key='prev_pothole_page'):
+            if st.session_state.pothole_page > 0:
+                st.session_state.pothole_page -= 1
+    with col3:
+        if st.button('Next ➡️', key='next_pothole_page'):
+            if st.session_state.pothole_page < total_pages - 1:
+                st.session_state.pothole_page += 1
+    # Show current page info
+    start_idx = st.session_state.pothole_page * page_size
+    end_idx = min(start_idx + page_size, total_markers)
+    st.sidebar.markdown(f"<div style='text-align:center; margin-bottom:8px;'>Showing markers <b>{start_idx+1}–{end_idx}</b> of <b>{total_markers}</b></div>", unsafe_allow_html=True)
 
 # ---------------------------- MAP ------------------------------------------------
+
+# NOTE: In Streamlit, any widget interaction (including map zoom/pan) triggers a rerun of the script.
+# This is expected behavior. To minimize performance impact, cache heavy data and limit marker/image rendering.
+# For persistent, non-refreshing maps, consider using Dash or a JS-based framework.
 
 # Create a map selection option in the sidebar
 st.sidebar.markdown('<div class="section-header"> 🌍 Map Style </div>', unsafe_allow_html=True)
@@ -394,6 +546,13 @@ if st.session_state.iri_calculation_result and layer_controls['iri']:
                     iri_lats.append(lat)
                     iri_lons.append(lon)
 
+# Collect pothole images data coordinates for map centering
+pothole_images_lats = []
+pothole_images_lons = []
+if st.session_state.pothole_images_data is not None and layer_controls['pothole_images']:
+    pothole_images_lats = st.session_state.pothole_images_data['latitude'].tolist()
+    pothole_images_lons = st.session_state.pothole_images_data['longitude'].tolist()
+
 # Session state for lats and lons
 
 # Update map center based on available data
@@ -403,6 +562,9 @@ if all_lats and all_lons:
 elif iri_lats and iri_lons:
     center_lat = np.mean(iri_lats)
     center_lon = np.mean(iri_lons)
+elif pothole_images_lats and pothole_images_lons:
+    center_lat = np.mean(pothole_images_lats)
+    center_lon = np.mean(pothole_images_lons)
 
 # Select tile layer based on user choice
 tile_configs = {
@@ -522,6 +684,63 @@ if st.session_state.iri_calculation_result and layer_controls['iri']:
                                     opacity=0.8
                                 ).add_to(m)
 
+# Add pothole images to map if available
+if st.session_state.pothole_images_data is not None and layer_controls['pothole_images']:
+    pothole_df = st.session_state.pothole_images_data
+    images_base_path = "streamlit_package/images/"
+    # Pagination logic
+    page_size = page_size if 'page_size' in locals() else 20
+    page = st.session_state.pothole_page if 'pothole_page' in st.session_state else 0
+    total_markers = len(pothole_df)
+    start_idx = page * page_size
+    end_idx = min(start_idx + page_size, total_markers)
+    pothole_df_limited = pothole_df.iloc[start_idx:end_idx]
+    # Show progress for loading markers
+    with st.spinner(f"Loading {len(pothole_df_limited)} pothole markers..."):
+        for idx, row in pothole_df_limited.iterrows():
+            try:
+                lat = row['latitude']
+                lon = row['longitude']
+                image_path = row['image_path']
+                confidence = row['confidence_score']
+                full_image_path = os.path.join(images_base_path, image_path)
+                if os.path.exists(full_image_path):
+                    with open(full_image_path, 'rb') as img_file:
+                        img_data = img_file.read()
+                        img_base64 = base64.b64encode(img_data).decode()
+                    popup_html = f"""
+                    <div style=\"text-align: center;\">
+                        <h4>🚧 Pothole Detection</h4>
+                        <img src=\"data:image/jpeg;base64,{img_base64}\" style=\"width: 250px; height: auto; border-radius: 8px; margin: 10px 0;\">
+                        <p><strong>Confidence:</strong> {confidence:.2%}</p>
+                        <p><strong>Location:</strong> {lat:.6f}, {lon:.6f}</p>
+                        <p><strong>Image:</strong> {image_path}</p>
+                    </div>
+                    """
+                    folium.Marker(
+                        location=[lat, lon],
+                        popup=folium.Popup(popup_html, max_width=300),
+                        icon=folium.Icon(
+                            color='red',
+                            icon='exclamation-triangle',
+                            prefix='fa'
+                        ),
+                        tooltip=f"Pothole Detection ({confidence:.1%})"
+                    ).add_to(m)
+                else:
+                    folium.Marker(
+                        location=[lat, lon],
+                        popup=f"Pothole Detection<br>Confidence: {confidence:.2%}<br>Image: {image_path}<br><em>Image file not found</em>",
+                        icon=folium.Icon(
+                            color='orange',
+                            icon='exclamation-triangle',
+                            prefix='fa'
+                        ),
+                        tooltip=f"Pothole Detection ({confidence:.1%}) - No Image"
+                    ).add_to(m)
+            except Exception as e:
+                continue
+
 # Add legend for IRI values if IRI data is available
 if st.session_state.iri_calculation_result and layer_controls['iri']:
     legend_html = '''
@@ -537,6 +756,21 @@ if st.session_state.iri_calculation_result and layer_controls['iri']:
     </div>
     '''
     m.get_root().html.add_child(folium.Element(legend_html))
+
+# Add legend for pothole images if available
+if st.session_state.pothole_images_data is not None and layer_controls['pothole_images']:
+    pothole_legend_html = '''
+    <div style="position: fixed; 
+                bottom: 50px; right: 50px; width: 240px; height: 170px; 
+                background-color: white; border: 2px solid #333; border-radius: 8px; z-index:9999; 
+                font-size:14px; padding: 15px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">
+    <p style="margin: 0 0 10px 0; font-weight: bold; font-size: 16px; text-align: center; border-bottom: 1px solid #ccc; padding-bottom: 5px;">🚧 Pothole Detections</p>
+    <p style="margin: 5px 0;"><span style="display: inline-block; width: 16px; height: 16px; background-color: red; border-radius: 50%; margin-right: 8px;"></span> Pothole with Image</p>
+    <p style="margin: 5px 0;"><span style="display: inline-block; width: 16px; height: 16px; background-color: orange; border-radius: 50%; margin-right: 8px;"></span> Pothole (No Image)</p>
+    <p style="margin: 5px 0; font-size: 12px; color: #666;">Click markers to view images</p>
+    </div>
+    '''
+    m.get_root().html.add_child(folium.Element(pothole_legend_html))
 
 # Add comprehensive CSS to make map cover full main area
 st.markdown("""
