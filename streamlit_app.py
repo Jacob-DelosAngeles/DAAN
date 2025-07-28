@@ -59,7 +59,7 @@ st.markdown("""
     color: white;
     padding: 0.5rem;
     border-radius: 5px;
-    margin: 1rem 0 0.5rem 0;
+    margin: 64px 0 0.5rem 0; /* Updated margin-top to 64px */
     font-weight: bold;
     text-align: center;
 }
@@ -139,7 +139,7 @@ if 'current_iri_file' not in st.session_state:
 # Sidebar with enhanced styling
 st.sidebar.markdown('<div class="sidebar-title">Project DAAN Express</div>', unsafe_allow_html=True)
 st.sidebar.markdown('<div class="sidebar-subtitle">Digital Analytics for Asset-based Navigation of Roads</div>', unsafe_allow_html=True)
-st.sidebar.markdown('<div class="section-header"> 📁 Data Upload & Layer Controls </div>', unsafe_allow_html = True)
+#st.sidebar.markdown('<div class="section-header"> 📁 Data Upload & Layer Controls </div>', unsafe_allow_html = True)
 
 # File uploaders with styling
 st.sidebar.markdown('<div class="section-header"> 📤 Upload Data Files </div>', unsafe_allow_html=True)
@@ -713,7 +713,6 @@ if st.session_state.pothole_images_data is not None and layer_controls['pothole_
                         <h4>🚧 Pothole Detection</h4>
                         <img src=\"data:image/jpeg;base64,{img_base64}\" style=\"width: 250px; height: auto; border-radius: 8px; margin: 10px 0;\">
                         <p><strong>Confidence:</strong> {confidence:.2%}</p>
-                        <p><strong>Location:</strong> {lat:.6f}, {lon:.6f}</p>
                         <p><strong>Image:</strong> {image_path}</p>
                     </div>
                     """
