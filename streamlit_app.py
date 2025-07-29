@@ -150,7 +150,7 @@ st.sidebar.markdown('<div class="section-header"> 📤 Upload Data Files </div>'
 vehicle_file = st.sidebar.file_uploader(
     "Upload Vehicle Detection Data CSV",
     type=['csv'],
-    help="CSV with columns: lat, lon, vehicle_type",
+    help="CSV with columns: latitude, longitude, vehicle_type",
     key="vehicle_upload",
 )
 
@@ -224,6 +224,9 @@ def load_and_validate_csv(file, required_columns, data_type):
     """Load and validate CSV file with required columns"""
     try:
         df = pd.read_csv(file)
+        
+        # Debug: Show available columns
+        st.sidebar.info(f"📋 Available columns in {data_type}: {list(df.columns)}")
 
         # Check if required columns  exist
         missing_cols = [
@@ -232,6 +235,7 @@ def load_and_validate_csv(file, required_columns, data_type):
 
         if missing_cols:
             st.error(f"Missing columns in {data_type} file: {missing_cols}")
+            st.error(f"Available columns: {list(df.columns)}")
             return None
         
         # Validate lat/lon are numeric
@@ -267,6 +271,35 @@ def load_and_validate_csv(file, required_columns, data_type):
     except Exception as e:
         st.error(f"Error loading {data_type} file: {str(e)}")
         return None
+
+# Automatic vehicle data loading when file is uploaded
+if vehicle_file is not None:
+    # Check if this is a new file (to avoid reloading on every rerun)
+    if 'current_vehicle_file' not in st.session_state or st.session_state.current_vehicle_file != vehicle_file.name:
+        try:
+            # Load and validate vehicle data
+            vehicle_df = load_and_validate_csv(
+                vehicle_file, 
+                ['latitude', 'longitude', 'vehicle_type'], 
+                "Vehicle Detection Data"
+            )
+            
+            if vehicle_df is not None:
+                # Filter to only include car, bicycle, and truck
+                valid_vehicle_types = ['car', 'bicycle', 'truck']
+                vehicle_df_filtered = vehicle_df[vehicle_df['vehicle_type'].isin(valid_vehicle_types)].copy()
+                
+                # Count vehicles by type
+                vehicle_counts = vehicle_df_filtered['vehicle_type'].value_counts()
+                
+                # Store data in session state
+                st.session_state.vehicle_data = vehicle_df_filtered
+                st.session_state.current_vehicle_file = vehicle_file.name
+                st.sidebar.success(f"✅ Loaded {len(vehicle_df_filtered)} vehicle detections!")
+            else:
+                st.sidebar.error("❌ Failed to load vehicle detection data")
+        except Exception as e:
+            st.sidebar.error(f"❌ Error loading vehicle detection data: {str(e)}")
 
 # Automatic pothole images data loading when file is uploaded
 if pothole_images_file is not None:
@@ -427,6 +460,61 @@ if st.session_state.iri_calculation_result:
         </div>
         """, unsafe_allow_html=True)
 
+# Display Vehicle Statistics if available
+if st.session_state.vehicle_data is not None:
+    vehicle_df = st.session_state.vehicle_data
+    
+    # Vehicle Statistics Expander
+    with st.sidebar.expander("🚗 Vehicle Detections", expanded=False):
+        # Total detections
+        st.markdown(f"""
+        <div class="iri-metric">
+            <div>📊 Total Vehicles</div>
+            <div class="iri-value">{len(vehicle_df)}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Vehicle type breakdown
+        vehicle_counts = vehicle_df['vehicle_type'].value_counts()
+        
+        # Cars
+        car_count = vehicle_counts.get('car', 0)
+        st.markdown(f"""
+        <div class="iri-metric">
+            <div>🚗 Cars</div>
+            <div class="iri-value">{car_count}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Trucks
+        truck_count = vehicle_counts.get('truck', 0)
+        st.markdown(f"""
+        <div class="iri-metric">
+            <div>🚛 Trucks</div>
+            <div class="iri-value">{truck_count}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Bicycles
+        bicycle_count = vehicle_counts.get('bicycle', 0)
+        st.markdown(f"""
+        <div class="iri-metric">
+            <div>🚲 Bicycles</div>
+            <div class="iri-value">{bicycle_count}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Coverage area (approximate)
+        lat_range = vehicle_df['latitude'].max() - vehicle_df['latitude'].min()
+        lon_range = vehicle_df['longitude'].max() - vehicle_df['longitude'].min()
+        coverage_km = max(lat_range, lon_range) * 111  # Rough conversion to km
+        st.markdown(f"""
+        <div class="iri-metric">
+            <div>🗺️ Coverage Area</div>
+            <div class="iri-value">{coverage_km:.1f} km</div>
+        </div>
+        """, unsafe_allow_html=True)
+
 # Display Pothole Images Statistics if available
 if st.session_state.pothole_images_data is not None:
     pothole_df = st.session_state.pothole_images_data
@@ -506,17 +594,7 @@ if st.session_state.pothole_images_data is not None:
 
 
 # Load and validate the data files
-# vehicle_file, pothole_file
-
-if vehicle_file is not None:
-    st.session_state.vehicle_data = load_and_validate_csv(
-        vehicle_file, ['lat', 'lon', 'vehicle_type'], "Vehicle Data"
-    )
-
-# if pothole_file is not None: # This line is removed as per the edit hint
-#     st.session_state.pothole_data = load_and_validate_csv( # This line is removed as per the edit hint
-#         pothole_file, ['lat', 'lon', 'image_path'], "Pothole Data" # This line is removed as per the edit hint
-#     ) # This line is removed as per the edit hint
+# Note: Vehicle data is now handled in the automatic loading section above
 
 
 
@@ -598,6 +676,13 @@ if st.session_state.iri_calculation_result and layer_controls['iri']:
                     iri_lats.append(lat)
                     iri_lons.append(lon)
 
+# Collect vehicle data coordinates for map centering
+vehicle_lats = []
+vehicle_lons = []
+if st.session_state.vehicle_data is not None and layer_controls['vehicles']:
+    vehicle_lats = st.session_state.vehicle_data['latitude'].tolist()
+    vehicle_lons = st.session_state.vehicle_data['longitude'].tolist()
+
 # Collect pothole images data coordinates for map centering
 pothole_images_lats = []
 pothole_images_lons = []
@@ -614,6 +699,9 @@ if all_lats and all_lons:
 elif iri_lats and iri_lons:
     center_lat = np.mean(iri_lats)
     center_lon = np.mean(iri_lons)
+elif vehicle_lats and vehicle_lons:
+    center_lat = np.mean(vehicle_lats)
+    center_lon = np.mean(vehicle_lons)
 elif pothole_images_lats and pothole_images_lons:
     center_lat = np.mean(pothole_images_lats)
     center_lon = np.mean(pothole_images_lons)
@@ -817,6 +905,48 @@ if st.session_state.pothole_images_data is not None and layer_controls['pothole_
             except Exception as e:
                 continue
 
+# Add vehicle markers to map if available
+if st.session_state.vehicle_data is not None and layer_controls['vehicles']:
+    vehicle_df = st.session_state.vehicle_data
+    
+    # Show progress for loading vehicle markers
+    with st.spinner(f"Loading {len(vehicle_df)} vehicle markers on map..."):
+        for idx, row in vehicle_df.iterrows():
+            try:
+                lat = row['latitude']
+                lon = row['longitude']
+                vehicle_type = row['vehicle_type']
+                
+                # Define colors and icons for different vehicle types
+                vehicle_config = {
+                    'car': {'color': 'blue', 'icon': 'car', 'tooltip': '🚗 Car'},
+                    'truck': {'color': 'orange', 'icon': 'truck', 'tooltip': '🚛 Truck'},
+                    'bicycle': {'color': 'green', 'icon': 'bicycle', 'tooltip': '🚲 Bicycle'}
+                }
+                
+                config = vehicle_config.get(vehicle_type, {'color': 'gray', 'icon': 'question', 'tooltip': '❓ Unknown'})
+                
+                popup_html = f"""
+                <div style=\"text-align: center;\">
+                    <h4>{config['tooltip']}</h4>
+                    <p><strong>Type:</strong> {vehicle_type.title()}</p>
+                    <p><strong>Location:</strong> {lat:.6f}, {lon:.6f}</p>
+                </div>
+                """
+                
+                folium.Marker(
+                    location=[lat, lon],
+                    popup=folium.Popup(popup_html, max_width=250),
+                    icon=folium.Icon(
+                        color=config['color'],
+                        icon=config['icon'],
+                        prefix='fa'
+                    ),
+                    tooltip=config['tooltip']
+                ).add_to(m)
+            except Exception as e:
+                continue
+
 # Add legend for IRI values if IRI data is available
 if st.session_state.iri_calculation_result and layer_controls['iri']:
     legend_html = '''
@@ -832,6 +962,21 @@ if st.session_state.iri_calculation_result and layer_controls['iri']:
     </div>
     '''
     m.get_root().html.add_child(folium.Element(legend_html))
+
+# Add legend for vehicle markers if available
+if st.session_state.vehicle_data is not None and layer_controls['vehicles']:
+    vehicle_legend_html = '''
+    <div style="position: fixed; 
+                bottom: 50px; left: 50px; width: 200px; height: 140px; 
+                background-color: white; border: 2px solid #333; border-radius: 8px; z-index:9999; 
+                font-size:14px; padding: 15px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">
+    <p style="margin: 0 0 10px 0; font-weight: bold; font-size: 16px; text-align: center; border-bottom: 1px solid #ccc; padding-bottom: 5px;">🚗 Vehicle Detections</p>
+    <p style="margin: 5px 0;"><span style="display: inline-block; width: 16px; height: 16px; background-color: blue; border-radius: 50%; margin-right: 8px;"></span> 🚗 Car</p>
+    <p style="margin: 5px 0;"><span style="display: inline-block; width: 16px; height: 16px; background-color: orange; border-radius: 50%; margin-right: 8px;"></span> 🚛 Truck</p>
+    <p style="margin: 5px 0;"><span style="display: inline-block; width: 16px; height: 16px; background-color: green; border-radius: 50%; margin-right: 8px;"></span> 🚲 Bicycle</p>
+    </div>
+    '''
+    m.get_root().html.add_child(folium.Element(vehicle_legend_html))
 
 # Add legend for pothole images if available
 if st.session_state.pothole_images_data is not None and layer_controls['pothole_images']:
