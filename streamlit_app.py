@@ -273,6 +273,13 @@ if pothole_images_file is not None:
     # Check if this is a new file (to avoid reloading on every rerun)
     if 'current_pothole_file' not in st.session_state or st.session_state.current_pothole_file != pothole_images_file.name:
         try:
+            # Check what images are actually available in the folder
+            images_base_path = "streamlit_package/images/"
+            available_images = []
+            if os.path.exists(images_base_path):
+                available_images = [f for f in os.listdir(images_base_path) if f.endswith(('.jpg', '.jpeg', '.png'))]
+                available_images.sort()
+            
             # Load and validate pothole images data
             pothole_df = load_and_validate_csv(
                 pothole_images_file, 
@@ -281,10 +288,55 @@ if pothole_images_file is not None:
             )
             
             if pothole_df is not None:
+                # Extract frame numbers from image_path and sort the data
+                def extract_frame_number(image_path):
+                    """Extract frame number from image path like 'frame_123.jpg'"""
+                    try:
+                        # Extract the number after 'frame_' and before '.jpg'
+                        frame_part = image_path.split('frame_')[1].split('.')[0]
+                        return int(frame_part)
+                    except (IndexError, ValueError):
+                        # If extraction fails, return a large number to put it at the end
+                        return 999999
+                
+                # Add frame number column for sorting
+                pothole_df['frame_number'] = pothole_df['image_path'].apply(extract_frame_number)
+                
+                # Validate that images exist and show debugging info
+                images_base_path = "streamlit_package/images/"
+                missing_images = []
+                valid_images = []
+                
+                for idx, row in pothole_df.iterrows():
+                    full_image_path = os.path.join(images_base_path, row['image_path'])
+                    if os.path.exists(full_image_path):
+                        valid_images.append(row['image_path'])
+                    else:
+                        missing_images.append(row['image_path'])
+                
+                # Show validation results
+                if missing_images:
+                    st.sidebar.warning(f"⚠️ {len(missing_images)} images not found in folder:")
+                    for img in missing_images[:5]:  # Show first 5 missing images
+                        st.sidebar.text(f"  - {img}")
+                    if len(missing_images) > 5:
+                        st.sidebar.text(f"  ... and {len(missing_images) - 5} more")
+                    
+                    # Show some available images for comparison
+                    if available_images:
+                        st.sidebar.info(f"📁 Available images in folder ({len(available_images)} total):")
+                        for img in available_images[:5]:  # Show first 5 available images
+                            st.sidebar.text(f"  ✓ {img}")
+                        if len(available_images) > 5:
+                            st.sidebar.text(f"  ... and {len(available_images) - 5} more")
+                
+                # Sort by frame number (ascending order)
+                pothole_df = pothole_df.sort_values('frame_number').reset_index(drop=True)
+                
                 # Store data in session state
                 st.session_state.pothole_images_data = pothole_df
                 st.session_state.current_pothole_file = pothole_images_file.name
-                st.sidebar.success(f"✅ Loaded {len(pothole_df)} pothole detections!")
+                st.sidebar.success(f"✅ Loaded {len(pothole_df)} pothole detections ({len(valid_images)} valid images, {len(missing_images)} missing)")
             else:
                 st.sidebar.error("❌ Failed to load pothole images data")
         except Exception as e:
@@ -420,34 +472,36 @@ if st.session_state.pothole_images_data is not None:
         
         # Image viewer section
         st.markdown("---")
-        st.markdown("**🔍 View Individual Images**")
+        st.markdown("**🔍 Current Page Images**")
         
-        # Dropdown to select image
-        image_options = [f"{row['image_path']} ({row['confidence_score']:.1%})" for idx, row in pothole_df.iterrows()]
-        selected_image = st.selectbox("Select pothole image to view:", image_options, index=0)
+        # Get current page of images
+        page_size = 10
+        page = st.session_state.pothole_page if 'pothole_page' in st.session_state else 0
+        start_idx = page * page_size
+        end_idx = min(start_idx + page_size, len(pothole_df))
+        current_page_df = pothole_df.iloc[start_idx:end_idx]
         
-        if selected_image:
-            # Extract image path from selection
-            image_path = selected_image.split(" (")[0]
-            confidence = float(selected_image.split("(")[1].split(")")[0].replace("%", "")) / 100
-            
-            # Find the corresponding row
-            selected_row = pothole_df[pothole_df['image_path'] == image_path].iloc[0]
-            
-            # Display image info
-            st.write(f"**Location:** {selected_row['latitude']:.6f}, {selected_row['longitude']:.6f}")
-            st.write(f"**Confidence:** {confidence:.1%}")
-            
-            # Load and display the selected image
-            full_image_path = os.path.join("streamlit_package/images/", image_path)
-            if os.path.exists(full_image_path):
-                try:
-                    image = Image.open(full_image_path)
-                    st.image(image, caption=f"Pothole Detection: {image_path}", use_container_width=True)
-                except Exception as e:
-                    st.error(f"Error loading image: {str(e)}")
-            else:
-                st.error(f"Image file not found: {full_image_path}")
+        # Display images for current page
+        for idx, row in current_page_df.iterrows():
+            # Create a container for each image
+            with st.container():
+                frame_num = row.get('frame_number', 'N/A')
+                st.markdown(f"**Image {idx-start_idx+1}:** Frame {frame_num} - {row['image_path']} ({row['confidence_score']:.1%})")
+                st.write(f"**Location:** {row['latitude']:.6f}, {row['longitude']:.6f}")
+                
+                # Load and display the image
+                full_image_path = os.path.join("streamlit_package/images/", row['image_path'])
+                if os.path.exists(full_image_path):
+                    try:
+                        image = Image.open(full_image_path)
+                        st.image(image, caption=f"Pothole Detection: Frame {frame_num} - {row['image_path']}", use_container_width=True)
+                    except Exception as e:
+                        st.error(f"Error loading image: {str(e)}")
+                else:
+                    st.error(f"Image file not found: {full_image_path}")
+                
+                # Add separator between images
+                st.markdown("---")
 
 
 
@@ -478,20 +532,17 @@ layer_controls['pothole_images'] = st.sidebar.checkbox("Pothole Images", value=T
 
 # Configuration for pothole images display
 if st.session_state.pothole_images_data is not None:
-    st.sidebar.markdown('<div class="section-header"> ⚙️ Pothole Display Settings </div>', unsafe_allow_html=True)
-    page_size = st.sidebar.slider(
-        "Markers per page:",
-        min_value=10,
-        max_value=100,
-        value=20,
-        step=10,
-        help="Number of pothole markers to show per page"
-    )
+    st.sidebar.markdown('<div class="section-header"> ⚙️ Pothole Image Viewer </div>', unsafe_allow_html=True)
+    
+    # Fixed page size of 10 images for better performance
+    page_size = 10
+    
     # Pagination state
     if 'pothole_page' not in st.session_state:
         st.session_state.pothole_page = 0
     total_markers = len(st.session_state.pothole_images_data)
     total_pages = (total_markers - 1) // page_size + 1
+    
     # Navigation buttons
     col1, col2, col3 = st.sidebar.columns([1,2,1])
     with col1:
@@ -502,10 +553,11 @@ if st.session_state.pothole_images_data is not None:
         if st.button('Next ➡️', key='next_pothole_page'):
             if st.session_state.pothole_page < total_pages - 1:
                 st.session_state.pothole_page += 1
+    
     # Show current page info
     start_idx = st.session_state.pothole_page * page_size
     end_idx = min(start_idx + page_size, total_markers)
-    st.sidebar.markdown(f"<div style='text-align:center; margin-bottom:8px;'>Showing markers <b>{start_idx+1}–{end_idx}</b> of <b>{total_markers}</b></div>", unsafe_allow_html=True)
+    st.sidebar.markdown(f"<div style='text-align:center; margin-bottom:8px;'>Showing images <b>{start_idx+1}–{end_idx}</b> of <b>{total_markers}</b></div>", unsafe_allow_html=True)
 
 # ---------------------------- MAP ------------------------------------------------
 
@@ -688,23 +740,28 @@ if st.session_state.iri_calculation_result and layer_controls['iri']:
 if st.session_state.pothole_images_data is not None and layer_controls['pothole_images']:
     pothole_df = st.session_state.pothole_images_data
     images_base_path = "streamlit_package/images/"
-    # Pagination logic
-    page_size = page_size if 'page_size' in locals() else 20
-    page = st.session_state.pothole_page if 'pothole_page' in st.session_state else 0
-    total_markers = len(pothole_df)
-    start_idx = page * page_size
-    end_idx = min(start_idx + page_size, total_markers)
-    pothole_df_limited = pothole_df.iloc[start_idx:end_idx]
-    # Show progress for loading markers
-    with st.spinner(f"Loading {len(pothole_df_limited)} pothole markers..."):
-        for idx, row in pothole_df_limited.iterrows():
+    
+    # Show progress for loading ALL markers
+    with st.spinner(f"Loading {len(pothole_df)} pothole markers on map..."):
+        # Display ALL markers on the map
+        for idx, row in pothole_df.iterrows():
             try:
                 lat = row['latitude']
                 lon = row['longitude']
                 image_path = row['image_path']
                 confidence = row['confidence_score']
+                
+                # Check if this marker is in the current page for image loading
+                page_size = 10
+                page = st.session_state.pothole_page if 'pothole_page' in st.session_state else 0
+                start_idx = page * page_size
+                end_idx = min(start_idx + page_size, len(pothole_df))
+                is_in_current_page = start_idx <= idx < end_idx
+                
                 full_image_path = os.path.join(images_base_path, image_path)
-                if os.path.exists(full_image_path):
+                
+                # Only load image data for markers in the current page (for performance)
+                if is_in_current_page and os.path.exists(full_image_path):
                     with open(full_image_path, 'rb') as img_file:
                         img_data = img_file.read()
                         img_base64 = base64.b64encode(img_data).decode()
@@ -714,6 +771,26 @@ if st.session_state.pothole_images_data is not None and layer_controls['pothole_
                         <img src=\"data:image/jpeg;base64,{img_base64}\" style=\"width: 250px; height: auto; border-radius: 8px; margin: 10px 0;\">
                         <p><strong>Confidence:</strong> {confidence:.2%}</p>
                         <p><strong>Image:</strong> {image_path}</p>
+                    </div>
+                    """
+                    folium.Marker(
+                        location=[lat, lon],
+                        popup=folium.Popup(popup_html, max_width=300),
+                        icon=folium.Icon(
+                            color='red',
+                            icon='exclamation-triangle',
+                            prefix='fa'
+                        ),
+                        tooltip=f"Pothole Detection ({confidence:.1%})"
+                    ).add_to(m)
+                elif os.path.exists(full_image_path):
+                    # For markers not in current page, just show basic info without image
+                    popup_html = f"""
+                    <div style=\"text-align: center;\">
+                        <h4>🚧 Pothole Detection</h4>
+                        <p><strong>Confidence:</strong> {confidence:.2%}</p>
+                        <p><strong>Image:</strong> {image_path}</p>
+                        <p><em>Use sidebar to view image</em></p>
                     </div>
                     """
                     folium.Marker(
@@ -766,7 +843,8 @@ if st.session_state.pothole_images_data is not None and layer_controls['pothole_
     <p style="margin: 0 0 10px 0; font-weight: bold; font-size: 16px; text-align: center; border-bottom: 1px solid #ccc; padding-bottom: 5px;">🚧 Pothole Detections</p>
     <p style="margin: 5px 0;"><span style="display: inline-block; width: 16px; height: 16px; background-color: red; border-radius: 50%; margin-right: 8px;"></span> Pothole with Image</p>
     <p style="margin: 5px 0;"><span style="display: inline-block; width: 16px; height: 16px; background-color: orange; border-radius: 50%; margin-right: 8px;"></span> Pothole (No Image)</p>
-    <p style="margin: 5px 0; font-size: 12px; color: #666;">Click markers to view images</p>
+    <p style="margin: 5px 0; font-size: 12px; color: #666;">All markers shown on map</p>
+    <p style="margin: 5px 0; font-size: 12px; color: #666;">Use sidebar to view images</p>
     </div>
     '''
     m.get_root().html.add_child(folium.Element(pothole_legend_html))
