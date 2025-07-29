@@ -289,6 +289,9 @@ if vehicle_file is not None:
                 valid_vehicle_types = ['car', 'bicycle', 'truck']
                 vehicle_df_filtered = vehicle_df[vehicle_df['vehicle_type'].isin(valid_vehicle_types)].copy()
                 
+                # Change 'bicycle' to 'motorcycle' in the data
+                vehicle_df_filtered['vehicle_type'] = vehicle_df_filtered['vehicle_type'].replace('bicycle', 'motorcycle')
+                
                 # Count vehicles by type
                 vehicle_counts = vehicle_df_filtered['vehicle_type'].value_counts()
                 
@@ -495,12 +498,12 @@ if st.session_state.vehicle_data is not None:
         </div>
         """, unsafe_allow_html=True)
         
-        # Bicycles
-        bicycle_count = vehicle_counts.get('bicycle', 0)
+        # Motorcycles
+        motorcycle_count = vehicle_counts.get('motorcycle', 0)
         st.markdown(f"""
         <div class="iri-metric">
-            <div>🚲 Bicycles</div>
-            <div class="iri-value">{bicycle_count}</div>
+            <div>🏍️ Motorcycles</div>
+            <div class="iri-value">{motorcycle_count}</div>
         </div>
         """, unsafe_allow_html=True)
         
@@ -692,19 +695,19 @@ if st.session_state.pothole_images_data is not None and layer_controls['pothole_
 
 # Session state for lats and lons
 
-# Update map center based on available data
-if all_lats and all_lons:
-    center_lat = np.mean(all_lats)
-    center_lon = np.mean(all_lons)
-elif iri_lats and iri_lons:
-    center_lat = np.mean(iri_lats)
-    center_lon = np.mean(iri_lons)
+# Update map center based on available data (Priority: 1. Pothole, 2. Vehicles, 3. IRI)
+if pothole_images_lats and pothole_images_lons:
+    center_lat = np.mean(pothole_images_lats)
+    center_lon = np.mean(pothole_images_lons)
 elif vehicle_lats and vehicle_lons:
     center_lat = np.mean(vehicle_lats)
     center_lon = np.mean(vehicle_lons)
-elif pothole_images_lats and pothole_images_lons:
-    center_lat = np.mean(pothole_images_lats)
-    center_lon = np.mean(pothole_images_lons)
+elif iri_lats and iri_lons:
+    center_lat = np.mean(iri_lats)
+    center_lon = np.mean(iri_lons)
+elif all_lats and all_lons:
+    center_lat = np.mean(all_lats)
+    center_lon = np.mean(all_lons)
 
 # Select tile layer based on user choice
 tile_configs = {
@@ -921,16 +924,20 @@ if st.session_state.vehicle_data is not None and layer_controls['vehicles']:
                 vehicle_config = {
                     'car': {'color': 'blue', 'icon': 'car', 'tooltip': '🚗 Car'},
                     'truck': {'color': 'orange', 'icon': 'truck', 'tooltip': '🚛 Truck'},
-                    'bicycle': {'color': 'green', 'icon': 'bicycle', 'tooltip': '🚲 Bicycle'}
+                    'motorcycle': {'color': 'green', 'icon': 'motorcycle', 'tooltip': '🏍️ Motorcycle'}
                 }
                 
                 config = vehicle_config.get(vehicle_type, {'color': 'gray', 'icon': 'question', 'tooltip': '❓ Unknown'})
+                
+                # Get total count for this vehicle type
+                vehicle_counts = vehicle_df['vehicle_type'].value_counts()
+                total_count = vehicle_counts.get(vehicle_type, 0)
                 
                 popup_html = f"""
                 <div style=\"text-align: center;\">
                     <h4>{config['tooltip']}</h4>
                     <p><strong>Type:</strong> {vehicle_type.title()}</p>
-                    <p><strong>Location:</strong> {lat:.6f}, {lon:.6f}</p>
+                    <p><strong>Total Count:</strong> {total_count}</p>
                 </div>
                 """
                 
@@ -967,13 +974,13 @@ if st.session_state.iri_calculation_result and layer_controls['iri']:
 if st.session_state.vehicle_data is not None and layer_controls['vehicles']:
     vehicle_legend_html = '''
     <div style="position: fixed; 
-                bottom: 50px; left: 50px; width: 200px; height: 140px; 
+                top: 50px; right: 50px; width: 200px; height: 160px; 
                 background-color: white; border: 2px solid #333; border-radius: 8px; z-index:9999; 
                 font-size:14px; padding: 15px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">
     <p style="margin: 0 0 10px 0; font-weight: bold; font-size: 16px; text-align: center; border-bottom: 1px solid #ccc; padding-bottom: 5px;">🚗 Vehicle Detections</p>
     <p style="margin: 5px 0;"><span style="display: inline-block; width: 16px; height: 16px; background-color: blue; border-radius: 50%; margin-right: 8px;"></span> 🚗 Car</p>
     <p style="margin: 5px 0;"><span style="display: inline-block; width: 16px; height: 16px; background-color: orange; border-radius: 50%; margin-right: 8px;"></span> 🚛 Truck</p>
-    <p style="margin: 5px 0;"><span style="display: inline-block; width: 16px; height: 16px; background-color: green; border-radius: 50%; margin-right: 8px;"></span> 🚲 Bicycle</p>
+    <p style="margin: 5px 0;"><span style="display: inline-block; width: 16px; height: 16px; background-color: green; border-radius: 50%; margin-right: 8px;"></span> 🏍️ Motorcycle</p>
     </div>
     '''
     m.get_root().html.add_child(folium.Element(vehicle_legend_html))
