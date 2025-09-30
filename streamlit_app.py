@@ -21,7 +21,7 @@ st.set_page_config(
     page_title="Project DAAN: Digital Analytics for Asset-based Navigation of Roads",
     page_icon="🛣️",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="auto",
 )
 
 # Enhanced sidebar styling
