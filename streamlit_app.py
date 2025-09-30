@@ -162,6 +162,8 @@ pothole_images_file = st.sidebar.file_uploader(
     key="pothole_images_upload"
 )
 
+
+
 # IRI Sensor Data Upload for calculation
 iri_sensor_file = st.sidebar.file_uploader(
     "Upload IRI Sensor Data CSV",
@@ -184,7 +186,7 @@ if iri_sensor_file is not None:
             
             if df_processed is not None:
                 # Calculate IRI with default segment length of 150
-                iri_values, segments, sampling_rate, speed = iri_calc.calculate_iri_rms_method(df_processed, 150)
+                iri_values, segments, sampling_rate, speed = iri_calc.calculate_iri_rms_method(df_processed, 25)
                 
                 # Check if calculation was successful
                 if not iri_values or len(iri_values) == 0:
@@ -309,12 +311,75 @@ if pothole_images_file is not None:
     # Check if this is a new file (to avoid reloading on every rerun)
     if 'current_pothole_file' not in st.session_state or st.session_state.current_pothole_file != pothole_images_file.name:
         try:
-            # Check what images are actually available in the folder
-            images_base_path = "streamlit_package/images/"
+            # Smart relative path detection system
+            def find_images_folder():
+                """Intelligently find images folder relative to common CSV locations"""
+                
+                # First priority: Look for ../images folder relative to current working directory
+                parent_images_path = os.path.join("..", "images")
+                if os.path.exists(parent_images_path):
+                    image_count = len([f for f in os.listdir(parent_images_path) if f.endswith(('.jpg', '.jpeg', '.png'))])
+                    if image_count > 0:
+                        return parent_images_path, image_count
+                
+                # Second priority: Look for images folder in current directory
+                current_images_path = "images"
+                if os.path.exists(current_images_path):
+                    image_count = len([f for f in os.listdir(current_images_path) if f.endswith(('.jpg', '.jpeg', '.png'))])
+                    if image_count > 0:
+                        return current_images_path, image_count
+                
+                # Third priority: Look for images folder in streamlit_package directory
+                streamlit_images_path = "streamlit_package/images"
+                if os.path.exists(streamlit_images_path):
+                    image_count = len([f for f in os.listdir(streamlit_images_path) if f.endswith(('.jpg', '.jpeg', '.png'))])
+                    if image_count > 0:
+                        return streamlit_images_path, image_count
+                
+                # Fourth priority: Common CSV locations and their corresponding images folders
+                csv_image_pairs = [
+                    ("UPLB/streamlit_package/data/", "UPLB/streamlit_package/images/"),
+                    ("streamlit_package/data/", "streamlit_package/images/"),
+                    ("UPLB/data/", "UPLB/images/"),
+                    ("data/", "images/"),
+                    ("UPLB/streamlit_package/", "UPLB/streamlit_package/images/"),
+                    ("streamlit_package/", "streamlit_package/images/"),
+                    ("UPLB/", "UPLB/images/"),
+                    ("./", "images/")
+                ]
+                
+                # Check each pair for images folder
+                for csv_path, images_path in csv_image_pairs:
+                    if os.path.exists(images_path):
+                        image_count = len([f for f in os.listdir(images_path) if f.endswith(('.jpg', '.jpeg', '.png'))])
+                        if image_count > 0:
+                            return images_path, image_count
+                
+                # If no pairs found, search recursively for any images folder
+                for root, dirs, files in os.walk("."):
+                    if "images" in dirs:
+                        potential_path = os.path.join(root, "images")
+                        if any(f.endswith(('.jpg', '.jpeg', '.png')) for f in os.listdir(potential_path)):
+                            image_count = len([f for f in os.listdir(potential_path) if f.endswith(('.jpg', '.jpeg', '.png'))])
+                            return potential_path, image_count
+                
+                # Final fallback
+                return "UPLB/streamlit_package/images/", 0
+            
+            # Find the best images folder
+            images_base_path, image_count = find_images_folder()
+            
+            # Show which images folder was found
+            st.sidebar.info(f"🔍 Found images folder: {images_base_path} ({image_count} images)")
+            
+            # Load available images from the found folder
             available_images = []
             if os.path.exists(images_base_path):
                 available_images = [f for f in os.listdir(images_base_path) if f.endswith(('.jpg', '.jpeg', '.png'))]
                 available_images.sort()
+            
+            # Store the found images path in session state for reuse
+            st.session_state.images_base_path = images_base_path
             
             # Load and validate pothole images data
             pothole_df = load_and_validate_csv(
@@ -339,7 +404,7 @@ if pothole_images_file is not None:
                 pothole_df['frame_number'] = pothole_df['image_path'].apply(extract_frame_number)
                 
                 # Validate that images exist and show debugging info
-                images_base_path = "streamlit_package/images/"
+                # Use the same images_base_path that was found above
                 missing_images = []
                 valid_images = []
                 
@@ -350,21 +415,11 @@ if pothole_images_file is not None:
                     else:
                         missing_images.append(row['image_path'])
                 
-                # Show validation results
+                # Show validation results (minimal info)
                 if missing_images:
-                    st.sidebar.warning(f"⚠️ {len(missing_images)} images not found in folder:")
-                    for img in missing_images[:5]:  # Show first 5 missing images
-                        st.sidebar.text(f"  - {img}")
-                    if len(missing_images) > 5:
-                        st.sidebar.text(f"  ... and {len(missing_images) - 5} more")
-                    
-                    # Show some available images for comparison
-                    if available_images:
-                        st.sidebar.info(f"📁 Available images in folder ({len(available_images)} total):")
-                        for img in available_images[:5]:  # Show first 5 available images
-                            st.sidebar.text(f"  ✓ {img}")
-                        if len(available_images) > 5:
-                            st.sidebar.text(f"  ... and {len(available_images) - 5} more")
+                    st.sidebar.warning(f"⚠️ {len(missing_images)} images not found")
+                else:
+                    st.sidebar.success(f"✅ All {len(valid_images)} images found")
                 
                 # Sort by frame number (ascending order)
                 pothole_df = pothole_df.sort_values('frame_number').reset_index(drop=True)
@@ -372,7 +427,8 @@ if pothole_images_file is not None:
                 # Store data in session state
                 st.session_state.pothole_images_data = pothole_df
                 st.session_state.current_pothole_file = pothole_images_file.name
-                st.sidebar.success(f"✅ Loaded {len(pothole_df)} pothole detections ({len(valid_images)} valid images, {len(missing_images)} missing)")
+                
+                st.sidebar.success(f"✅ Loaded {len(pothole_df)} pothole detections")
             else:
                 st.sidebar.error("❌ Failed to load pothole images data")
         except Exception as e:
@@ -581,7 +637,59 @@ if st.session_state.pothole_images_data is not None:
                 st.write(f"**Location:** {row['latitude']:.6f}, {row['longitude']:.6f}")
                 
                 # Load and display the image
-                full_image_path = os.path.join("streamlit_package/images/", row['image_path'])
+                # Use the stored images_base_path from session state, with smart fallback
+                sidebar_images_base_path = st.session_state.get('images_base_path')
+                if not sidebar_images_base_path:
+                    # Smart fallback detection using the same logic
+                    def find_images_folder_sidebar():
+                        # First priority: Look for ../images folder relative to current working directory
+                        parent_images_path = os.path.join("..", "images")
+                        if os.path.exists(parent_images_path):
+                            if any(f.endswith(('.jpg', '.jpeg', '.png')) for f in os.listdir(parent_images_path)):
+                                return parent_images_path
+                        
+                        # Second priority: Look for images folder in current directory
+                        current_images_path = "images"
+                        if os.path.exists(current_images_path):
+                            if any(f.endswith(('.jpg', '.jpeg', '.png')) for f in os.listdir(current_images_path)):
+                                return current_images_path
+                        
+                        # Third priority: Look for images folder in streamlit_package directory
+                        streamlit_images_path = "streamlit_package/images"
+                        if os.path.exists(streamlit_images_path):
+                            if any(f.endswith(('.jpg', '.jpeg', '.png')) for f in os.listdir(streamlit_images_path)):
+                                return streamlit_images_path
+                        
+                        # Fourth priority: Common CSV locations and their corresponding images folders
+                        csv_image_pairs = [
+                            ("UPLB/streamlit_package/data/", "UPLB/streamlit_package/images/"),
+                            ("streamlit_package/data/", "streamlit_package/images/"),
+                            ("UPLB/data/", "UPLB/images/"),
+                            ("data/", "images/"),
+                            ("UPLB/streamlit_package/", "UPLB/streamlit_package/images/"),
+                            ("streamlit_package/", "streamlit_package/images/"),
+                            ("UPLB/", "UPLB/images/"),
+                            ("./", "images/")
+                        ]
+                        
+                        for csv_path, images_path in csv_image_pairs:
+                            if os.path.exists(images_path):
+                                if any(f.endswith(('.jpg', '.jpeg', '.png')) for f in os.listdir(images_path)):
+                                    return images_path
+                        
+                        # Recursive search fallback
+                        for root, dirs, files in os.walk("."):
+                            if "images" in dirs:
+                                potential_path = os.path.join(root, "images")
+                                if any(f.endswith(('.jpg', '.jpeg', '.png')) for f in os.listdir(potential_path)):
+                                    return potential_path
+                        
+                        return "UPLB/streamlit_package/images/"
+                    
+                    sidebar_images_base_path = find_images_folder_sidebar()
+                    st.sidebar.info(f"🔍 Sidebar using images folder: {sidebar_images_base_path}")
+                
+                full_image_path = os.path.join(sidebar_images_base_path, row['image_path'])
                 if os.path.exists(full_image_path):
                     try:
                         image = Image.open(full_image_path)
@@ -830,7 +938,58 @@ if st.session_state.iri_calculation_result and layer_controls['iri']:
 # Add pothole images to map if available
 if st.session_state.pothole_images_data is not None and layer_controls['pothole_images']:
     pothole_df = st.session_state.pothole_images_data
-    images_base_path = "streamlit_package/images/"
+    
+    # Use the stored images_base_path from session state, with smart fallback detection
+    images_base_path = st.session_state.get('images_base_path')
+    if not images_base_path:
+        # Smart fallback detection using the same logic
+        def find_images_folder_fallback():
+            # First priority: Look for ../images folder relative to current working directory
+            parent_images_path = os.path.join("..", "images")
+            if os.path.exists(parent_images_path):
+                if any(f.endswith(('.jpg', '.jpeg', '.png')) for f in os.listdir(parent_images_path)):
+                    return parent_images_path
+            
+            # Second priority: Look for images folder in current directory
+            current_images_path = "images"
+            if os.path.exists(current_images_path):
+                if any(f.endswith(('.jpg', '.jpeg', '.png')) for f in os.listdir(current_images_path)):
+                    return current_images_path
+            
+            # Third priority: Look for images folder in streamlit_package directory
+            streamlit_images_path = "streamlit_package/images"
+            if os.path.exists(streamlit_images_path):
+                if any(f.endswith(('.jpg', '.jpeg', '.png')) for f in os.listdir(streamlit_images_path)):
+                    return streamlit_images_path
+            
+            # Fourth priority: Common CSV locations and their corresponding images folders
+            csv_image_pairs = [
+                ("UPLB/streamlit_package/data/", "UPLB/streamlit_package/images/"),
+                ("streamlit_package/data/", "streamlit_package/images/"),
+                ("UPLB/data/", "UPLB/images/"),
+                ("data/", "images/"),
+                ("UPLB/streamlit_package/", "UPLB/streamlit_package/images/"),
+                ("streamlit_package/", "streamlit_package/images/"),
+                ("UPLB/", "UPLB/images/"),
+                ("./", "images/")
+            ]
+            
+            for csv_path, images_path in csv_image_pairs:
+                if os.path.exists(images_path):
+                    if any(f.endswith(('.jpg', '.jpeg', '.png')) for f in os.listdir(images_path)):
+                        return images_path
+            
+            # Recursive search fallback
+            for root, dirs, files in os.walk("."):
+                if "images" in dirs:
+                    potential_path = os.path.join(root, "images")
+                    if any(f.endswith(('.jpg', '.jpeg', '.png')) for f in os.listdir(potential_path)):
+                        return potential_path
+            
+            return "UPLB/streamlit_package/images/"
+        
+        images_base_path = find_images_folder_fallback()
+        st.sidebar.info(f"🔍 Using fallback images folder: {images_base_path}")
     
     # Show progress for loading ALL markers
     with st.spinner(f"Loading {len(pothole_df)} pothole markers on map..."):
