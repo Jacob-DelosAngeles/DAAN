@@ -1,7 +1,7 @@
 Streamlit App Image Index
 ==============================
-Total images: 286
+Total images: 214
 Generated from: streamlit_pothole_detections.csv
-Generated on: 2025-07-27 19:46:15.856705
+Generated on: 2025-08-17 00:26:09.207865
 
 Image files:
