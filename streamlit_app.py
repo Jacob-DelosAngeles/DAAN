@@ -16,6 +16,22 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import plotly.express as px
 
+# Initialize session state FIRST - before any other code that uses it
+if 'sidebar_visible' not in st.session_state:
+    st.session_state.sidebar_visible = True
+if 'vehicle_data' not in st.session_state:
+    st.session_state.vehicle_data = None
+if 'pothole_data' not in st.session_state:
+    st.session_state.pothole_data = None
+if 'pothole_images_data' not in st.session_state:
+    st.session_state.pothole_images_data = None
+if 'current_pothole_file' not in st.session_state:
+    st.session_state.current_pothole_file = None
+if 'iri_calculation_result' not in st.session_state:
+    st.session_state.iri_calculation_result = None
+if 'current_iri_file' not in st.session_state:
+    st.session_state.current_iri_file = None
+
 # Page configuration
 st.set_page_config(
     page_title="Project DAAN: Digital Analytics for Asset-based Navigation of Roads",
@@ -23,6 +39,87 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="auto",
 )
+
+# Custom Sidebar Toggle Function
+def create_custom_sidebar_toggle():
+    """Create a custom sidebar toggle button that works on both local and cloud deployments"""
+    
+    # Add CSS for the floating toggle button
+    st.markdown("""
+    <style>
+    /* Custom Sidebar Toggle Button Styles - Target the first button in first column */
+    div[data-testid="column"]:first-child .stButton > button {
+        position: fixed !important;
+        top: 20px !important;
+        left: 20px !important;
+        z-index: 10000 !important;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 50% !important;
+        width: 50px !important;
+        height: 50px !important;
+        font-size: 18px !important;
+        cursor: pointer !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+        transition: all 0.3s ease !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    
+
+    div[data-testid="column"]:first-child .stButton > button:hover {
+        transform: scale(1.1) !important;
+        box-shadow: 0 6px 16px rgba(0,0,0,0.4) !important;
+        background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%) !important;
+    }
+    
+    div[data-testid="column"]:first-child .stButton > button:active {
+        transform: scale(0.95) !important;
+    }
+    
+    /* Hide the native sidebar toggle */
+    div[data-testid="stSidebar"] button[aria-label="Close sidebar"] {
+        display: none !important;
+    }
+    
+    div[data-testid="stSidebar"] button[aria-label="Open sidebar"] {
+        display: none !important;
+    }
+    
+    /* Ensure the toggle button container doesn't interfere with layout */
+    div[data-testid="column"]:first-child .stButton {
+        position: fixed !important;
+        top: 20px !important;
+        left: 20px !important;
+        z-index: 10000 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Create the toggle button
+    col1, col2, col3 = st.columns([1, 20, 1])
+    with col1:
+        # Use different icons for open/closed state
+        icon = "✕" if st.session_state.sidebar_visible else "☰"
+        help_text = "Hide Sidebar" if st.session_state.sidebar_visible else "Show Sidebar"
+        
+        if st.button(
+            icon,
+            key="custom_sidebar_toggle",
+            help=help_text,
+            use_container_width=False
+        ):
+            st.session_state.sidebar_visible = not st.session_state.sidebar_visible
+            st.rerun()
+
+# Create the custom sidebar toggle
+create_custom_sidebar_toggle()
 
 # Enhanced sidebar styling
 st.markdown("""
@@ -34,6 +131,10 @@ st.markdown("""
 
 .stSidebar > div:first-child { 
     background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); }
+    
+[data-testid="stMainBlockContainer"] [data-testid="stVerticalBlock"]:nth-of-type(1) {
+    gap: 0px !important;
+}
 
 .sidebar-title {
     font-size: 24px;
@@ -121,55 +222,49 @@ st.markdown("""
 
 </style>""", unsafe_allow_html=True)
 
-# Initialize session state for data and IRI calculation
-if 'vehicle_data' not in st.session_state:
-    st.session_state.vehicle_data = None
-if 'pothole_data' not in st.session_state:
-    st.session_state.pothole_data = None
-if 'pothole_images_data' not in st.session_state:
-    st.session_state.pothole_images_data = None
-if 'current_pothole_file' not in st.session_state:
-    st.session_state.current_pothole_file = None
-if 'iri_calculation_result' not in st.session_state:
-    st.session_state.iri_calculation_result = None
-if 'current_iri_file' not in st.session_state:
-    st.session_state.current_iri_file = None
+# Session state is now initialized at the top of the file
 
-# Sidebar with enhanced styling
-st.sidebar.markdown('<div class="sidebar-title">Project DAAN Express</div>', unsafe_allow_html=True)
-st.sidebar.markdown('<div class="sidebar-subtitle">Digital Analytics for Asset-based Navigation of Roads</div>', unsafe_allow_html=True)
-#st.sidebar.markdown('<div class="section-header"> 📁 Data Upload & Layer Controls </div>', unsafe_allow_html = True)
+# Sidebar with enhanced styling - Only render if sidebar is visible
+if st.session_state.sidebar_visible:
+    st.sidebar.markdown('<div class="sidebar-title">Project DAAN Express</div>', unsafe_allow_html=True)
+    st.sidebar.markdown('<div class="sidebar-subtitle">Digital Analytics for Asset-based Navigation of Roads</div>', unsafe_allow_html=True)
+    #st.sidebar.markdown('<div class="section-header"> 📁 Data Upload & Layer Controls </div>', unsafe_allow_html = True)
 
-# File uploaders with styling
-st.sidebar.markdown('<div class="section-header"> 📤 Upload Data Files </div>', unsafe_allow_html=True)
+    # File uploaders with styling
+    st.sidebar.markdown('<div class="section-header"> 📤 Upload Data Files </div>', unsafe_allow_html=True)
 
 
 
-# Vehicle Detection Data Upload
-vehicle_file = st.sidebar.file_uploader(
-    "Upload Vehicle Detection Data CSV",
-    type=['csv'],
-    help="CSV with columns: latitude, longitude, vehicle_type",
-    key="vehicle_upload",
-)
+    # Vehicle Detection Data Upload
+    vehicle_file = st.sidebar.file_uploader(
+        "Upload Vehicle Detection Data CSV",
+        type=['csv'],
+        help="CSV with columns: latitude, longitude, vehicle_type",
+        key="vehicle_upload",
+    )
 
-# Pothole Images Data Upload (with image paths)
-pothole_images_file = st.sidebar.file_uploader(
-    "Upload Pothole Images Data CSV",
-    type=['csv'],
-    help="CSV with columns: latitude, longitude, image_path, confidence_score",
-    key="pothole_images_upload"
-)
+    # Pothole Images Data Upload (with image paths)
+    pothole_images_file = st.sidebar.file_uploader(
+        "Upload Pothole Images Data CSV",
+        type=['csv'],
+        help="CSV with columns: latitude, longitude, image_path, confidence_score",
+        key="pothole_images_upload"
+    )
 
 
 
-# IRI Sensor Data Upload for calculation
-iri_sensor_file = st.sidebar.file_uploader(
-    "Upload IRI Sensor Data CSV",
-    type=['csv'],
-    help="CSV with columns: time, ax, ay, az (from Physics Toolbox Sensor Suite)",
-    key="iri_sensor_upload"
-)
+    # IRI Sensor Data Upload for calculation
+    iri_sensor_file = st.sidebar.file_uploader(
+        "Upload IRI Sensor Data CSV",
+        type=['csv'],
+        help="CSV with columns: time, ax, ay, az (from Physics Toolbox Sensor Suite)",
+        key="iri_sensor_upload"
+    )
+else:
+    # Set default values when sidebar is hidden
+    vehicle_file = None
+    pothole_images_file = None
+    iri_sensor_file = None
 
 # Automatic IRI calculation when file is uploaded
 if iri_sensor_file is not None:
@@ -189,7 +284,8 @@ if iri_sensor_file is not None:
                 
                 # Check if calculation was successful
                 if not iri_values or len(iri_values) == 0:
-                    st.sidebar.error("❌ No IRI values calculated. Check your data format.")
+                    if st.session_state.sidebar_visible:
+                        st.sidebar.error("❌ No IRI values calculated. Check your data format.")
                 else:
                     # Calculate statistics
                     mean_iri = np.mean(iri_values)
@@ -213,11 +309,14 @@ if iri_sensor_file is not None:
                     
                     # Store current file name to avoid recalculation
                     st.session_state.current_iri_file = iri_sensor_file.name
-                    st.sidebar.success("✅ IRI calculation completed!")
+                    if st.session_state.sidebar_visible:
+                        st.sidebar.success("✅ IRI calculation completed!")
             else:
-                st.sidebar.error("❌ Data preprocessing failed")
+                if st.session_state.sidebar_visible:
+                    st.sidebar.error("❌ Data preprocessing failed")
         except Exception as e:
-            st.sidebar.error(f"❌ Error calculating IRI: {str(e)}")
+            if st.session_state.sidebar_visible:
+                st.sidebar.error(f"❌ Error calculating IRI: {str(e)}")
 
 # Function to validate and load CSV data
 # To validate and change if plottable
@@ -227,7 +326,8 @@ def load_and_validate_csv(file, required_columns, data_type):
         df = pd.read_csv(file)
         
         # Debug: Show available columns
-        st.sidebar.info(f"📋 Available columns in {data_type}: {list(df.columns)}")
+        if st.session_state.sidebar_visible:
+            st.sidebar.info(f"📋 Available columns in {data_type}: {list(df.columns)}")
 
         # Check if required columns  exist
         missing_cols = [
@@ -299,11 +399,14 @@ if vehicle_file is not None:
                 # Store data in session state
                 st.session_state.vehicle_data = vehicle_df_filtered
                 st.session_state.current_vehicle_file = vehicle_file.name
-                st.sidebar.success(f"✅ Loaded {len(vehicle_df_filtered)} vehicle detections!")
+                if st.session_state.sidebar_visible:
+                    st.sidebar.success(f"✅ Loaded {len(vehicle_df_filtered)} vehicle detections!")
             else:
-                st.sidebar.error("❌ Failed to load vehicle detection data")
+                if st.session_state.sidebar_visible:
+                    st.sidebar.error("❌ Failed to load vehicle detection data")
         except Exception as e:
-            st.sidebar.error(f"❌ Error loading vehicle detection data: {str(e)}")
+            if st.session_state.sidebar_visible:
+                st.sidebar.error(f"❌ Error loading vehicle detection data: {str(e)}")
 
 # Automatic pothole images data loading when file is uploaded
 if pothole_images_file is not None:
@@ -369,7 +472,8 @@ if pothole_images_file is not None:
             images_base_path, image_count = find_images_folder()
             
             # Show which images folder was found
-            st.sidebar.info(f"🔍 Found images folder: {images_base_path} ({image_count} images)")
+            if st.session_state.sidebar_visible:
+                st.sidebar.info(f"🔍 Found images folder: {images_base_path} ({image_count} images)")
             
             # Load available images from the found folder
             available_images = []
@@ -415,10 +519,11 @@ if pothole_images_file is not None:
                         missing_images.append(row['image_path'])
                 
                 # Show validation results (minimal info)
-                if missing_images:
-                    st.sidebar.warning(f"⚠️ {len(missing_images)} images not found")
-                else:
-                    st.sidebar.success(f"✅ All {len(valid_images)} images found")
+                if st.session_state.sidebar_visible:
+                    if missing_images:
+                        st.sidebar.warning(f"⚠️ {len(missing_images)} images not found")
+                    else:
+                        st.sidebar.success(f"✅ All {len(valid_images)} images found")
                 
                 # Sort by frame number (ascending order)
                 pothole_df = pothole_df.sort_values('frame_number').reset_index(drop=True)
@@ -427,14 +532,17 @@ if pothole_images_file is not None:
                 st.session_state.pothole_images_data = pothole_df
                 st.session_state.current_pothole_file = pothole_images_file.name
                 
-                st.sidebar.success(f"✅ Loaded {len(pothole_df)} pothole detections")
+                if st.session_state.sidebar_visible:
+                    st.sidebar.success(f"✅ Loaded {len(pothole_df)} pothole detections")
             else:
-                st.sidebar.error("❌ Failed to load pothole images data")
+                if st.session_state.sidebar_visible:
+                    st.sidebar.error("❌ Failed to load pothole images data")
         except Exception as e:
-            st.sidebar.error(f"❌ Error loading pothole images data: {str(e)}")
+            if st.session_state.sidebar_visible:
+                st.sidebar.error(f"❌ Error loading pothole images data: {str(e)}")
 
 # Display IRI Results if available
-if st.session_state.iri_calculation_result:
+if st.session_state.iri_calculation_result and st.session_state.sidebar_visible:
     result = st.session_state.iri_calculation_result
     
     # IRI Results Expander
@@ -519,7 +627,7 @@ if st.session_state.iri_calculation_result:
         """, unsafe_allow_html=True)
 
 # Display Vehicle Statistics if available
-if st.session_state.vehicle_data is not None:
+if st.session_state.vehicle_data is not None and st.session_state.sidebar_visible:
     vehicle_df = st.session_state.vehicle_data
     
     # Vehicle Statistics Expander
@@ -574,7 +682,7 @@ if st.session_state.vehicle_data is not None:
         """, unsafe_allow_html=True)
 
 # Display Pothole Images Statistics if available
-if st.session_state.pothole_images_data is not None:
+if st.session_state.pothole_images_data is not None and st.session_state.sidebar_visible:
     pothole_df = st.session_state.pothole_images_data
     
     # Pothole Images Statistics Expander
@@ -686,7 +794,8 @@ if st.session_state.pothole_images_data is not None:
                         return "UPLB/streamlit_package/images/"
                     
                     sidebar_images_base_path = find_images_folder_sidebar()
-                    st.sidebar.info(f"🔍 Sidebar using images folder: {sidebar_images_base_path}")
+                    if st.session_state.sidebar_visible:
+                        st.sidebar.info(f"🔍 Sidebar using images folder: {sidebar_images_base_path}")
                 
                 full_image_path = os.path.join(sidebar_images_base_path, row['image_path'])
                 if os.path.exists(full_image_path):
@@ -709,17 +818,25 @@ if st.session_state.pothole_images_data is not None:
 
 
 # Layer toggle controls with styling
-st.sidebar.markdown('<div class="section-header"> 🗺️ Data Layers </div>', unsafe_allow_html=True)
+if st.session_state.sidebar_visible:
+    st.sidebar.markdown('<div class="section-header"> 🗺️ Data Layers </div>', unsafe_allow_html=True)
 
-layer_controls = {}
-layer_controls['iri'] = st.sidebar.checkbox("IRI Values", value=True, disabled=st.session_state.iri_calculation_result is None)
-layer_controls['vehicles'] = st.sidebar.checkbox("Vehicles", value=True, disabled=st.session_state.vehicle_data is None)
-# Remove the old Potholes checkbox
-# layer_controls['pothole'] = st.sidebar.checkbox("Potholes", value=True, disabled=st.session_state.pothole_data is None)
-layer_controls['pothole_images'] = st.sidebar.checkbox("Pothole Images", value=True, disabled=st.session_state.pothole_images_data is None)
+    layer_controls = {}
+    layer_controls['iri'] = st.sidebar.checkbox("IRI Values", value=True, disabled=st.session_state.iri_calculation_result is None)
+    layer_controls['vehicles'] = st.sidebar.checkbox("Vehicles", value=True, disabled=st.session_state.vehicle_data is None)
+    # Remove the old Potholes checkbox
+    # layer_controls['pothole'] = st.sidebar.checkbox("Potholes", value=True, disabled=st.session_state.pothole_data is None)
+    layer_controls['pothole_images'] = st.sidebar.checkbox("Pothole Images", value=True, disabled=st.session_state.pothole_images_data is None)
+else:
+    # Set default layer controls when sidebar is hidden
+    layer_controls = {
+        'iri': True,
+        'vehicles': True,
+        'pothole_images': True
+    }
 
 # Configuration for pothole images display
-if st.session_state.pothole_images_data is not None:
+if st.session_state.pothole_images_data is not None and st.session_state.sidebar_visible:
     st.sidebar.markdown('<div class="section-header"> ⚙️ Pothole Image Viewer </div>', unsafe_allow_html=True)
     
     # Fixed page size of 10 images for better performance
@@ -754,12 +871,16 @@ if st.session_state.pothole_images_data is not None:
 # For persistent, non-refreshing maps, consider using Dash or a JS-based framework.
 
 # Create a map selection option in the sidebar
-st.sidebar.markdown('<div class="section-header"> 🌍 Map Style </div>', unsafe_allow_html=True)
-map_style = st.sidebar.selectbox(
-    "Choose map style:",
-    ["OpenStreetMap", "Satellite", "3D Terrain", "Dark Mode"],
-    index=0
-)
+if st.session_state.sidebar_visible:
+    st.sidebar.markdown('<div class="section-header"> 🌍 Map Style </div>', unsafe_allow_html=True)
+    map_style = st.sidebar.selectbox(
+        "Choose map style:",
+        ["OpenStreetMap", "Satellite", "3D Terrain", "Dark Mode"],
+        index=0
+    )
+else:
+    # Default map style when sidebar is hidden
+    map_style = "OpenStreetMap"
 
 # Determine map center
 center_lat, center_lon = 14.5995, 120.9842  # Default to Manila
@@ -988,7 +1109,8 @@ if st.session_state.pothole_images_data is not None and layer_controls['pothole_
             return "UPLB/streamlit_package/images/"
         
         images_base_path = find_images_folder_fallback()
-        st.sidebar.info(f"🔍 Using fallback images folder: {images_base_path}")
+        if st.session_state.sidebar_visible:
+            st.sidebar.info(f"🔍 Using fallback images folder: {images_base_path}")
     
     # Show progress for loading ALL markers
     with st.spinner(f"Loading {len(pothole_df)} pothole markers on map..."):
