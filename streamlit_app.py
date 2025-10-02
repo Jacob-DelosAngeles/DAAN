@@ -21,7 +21,7 @@ st.set_page_config(
     page_title="Project DAAN: Digital Analytics for Asset-based Navigation of Roads",
     page_icon="🛣️",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="auto",
 )
 
 # Enhanced sidebar styling
@@ -32,19 +32,8 @@ st.markdown("""
     color: white;
 }
 
-/* Style only the content part of the sidebar, not the toggle button */
-.stSidebar > div:nth-child(2) {
-    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-}
-
-/* Ensure the sidebar toggle button is always visible */
-[data-testid="collapsedControl"] {
-    display: flex !important;
-    visibility: visible !important;
-    color: black !important;  /* Adjust if blending with background */
-    z-index: 999 !important;
-}
-
+.stSidebar > div:first-child { 
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); }
 
 .sidebar-title {
     font-size: 24px;
